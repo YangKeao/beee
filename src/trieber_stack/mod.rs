@@ -3,22 +3,22 @@ use std::sync::atomic::Ordering;
 use std::cmp::PartialEq;
 use std::ptr::null_mut;
 
-struct Node<T: PartialEq> {
-    val: T,
-    next: AtomicPtr<Option<Node<T>>>
+struct Node<T: PartialEq + Copy> {
+    pub val: T,
+    pub next: AtomicPtr<Option<Node<T>>>
 }
 
-impl<T: PartialEq> PartialEq for Node<T> {
+impl<T: PartialEq + Copy> PartialEq for Node<T> {
     fn eq(&self, other: &Node<T>) -> bool {
         self.val == other.val
     }
 }
 
-pub struct Stack<T: PartialEq> {
+pub struct Stack<T: PartialEq + Copy> {
     top: AtomicPtr<Option<Node<T>>>
 }
 
-impl<T: PartialEq> Stack<T> {
+impl<T: PartialEq + Copy> Stack<T> {
     pub fn push(&self, val: T) {
         let node = Box::new(Some(Node {
             val,
@@ -43,8 +43,19 @@ impl<T: PartialEq> Stack<T> {
         }
     }
 
-    pub fn pop(&self) {
+    pub fn pop(&self) -> Option<T> {
         loop {
+            let top = self.top.load(Ordering::Relaxed);
+            match unsafe{&mut *top} {
+                Some(n) => {
+                    if let Ok(_) = self.top.compare_exchange(top, n.next.load(Ordering::Relaxed), Ordering::SeqCst, Ordering::Relaxed) {
+                        break Some(n.val);
+                    }
+                }
+                None => {
+                    break None;
+                }
+            }
         }
     }
 }
