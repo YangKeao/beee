@@ -19,6 +19,13 @@ pub struct Stack<T: PartialEq + Copy> {
 }
 
 impl<T: PartialEq + Copy> Stack<T> {
+    pub fn new() -> Stack<T> {
+        let none = Box::new(None);
+        let none_ptr = Box::leak(none);
+        return Stack {
+            top: AtomicPtr::new(none_ptr)
+        }
+    }
     pub fn push(&self, val: T) {
         let node = Box::new(Some(Node {
             val,
@@ -57,5 +64,14 @@ impl<T: PartialEq + Copy> Stack<T> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_push() {
     }
 }
