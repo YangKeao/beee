@@ -3,22 +3,16 @@ use std::ptr::null_mut;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 
-struct Node<T: PartialEq> {
+struct Node<T> {
     pub val: T,
     pub(crate) next: AtomicPtr<Option<Node<T>>>,
 }
 
-impl<T: PartialEq> PartialEq for Node<T> {
-    fn eq(&self, other: &Node<T>) -> bool {
-        self.val == other.val
-    }
-}
-
-pub struct Stack<T: PartialEq> {
+pub struct Stack<T> {
     top: AtomicPtr<Option<Node<T>>>,
 }
 
-impl<T: PartialEq> Stack<T> {
+impl<T> Stack<T> {
     pub fn new() -> Stack<T> {
         let none = Box::new(None);
         let none_ptr = Box::leak(none);
