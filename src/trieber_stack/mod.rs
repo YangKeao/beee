@@ -1,11 +1,11 @@
-use std::sync::atomic::AtomicPtr;
-use std::sync::atomic::Ordering;
 use std::cmp::PartialEq;
 use std::ptr::null_mut;
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::Ordering;
 
 struct Node<T: PartialEq> {
     pub val: T,
-    pub next: AtomicPtr<Option<Node<T>>>
+    pub next: AtomicPtr<Option<Node<T>>>,
 }
 
 impl<T: PartialEq> PartialEq for Node<T> {
@@ -15,7 +15,7 @@ impl<T: PartialEq> PartialEq for Node<T> {
 }
 
 pub struct Stack<T: PartialEq> {
-    top: AtomicPtr<Option<Node<T>>>
+    top: AtomicPtr<Option<Node<T>>>,
 }
 
 impl<T: PartialEq> Stack<T> {
@@ -23,13 +23,13 @@ impl<T: PartialEq> Stack<T> {
         let none = Box::new(None);
         let none_ptr = Box::leak(none);
         return Stack {
-            top: AtomicPtr::new(none_ptr)
-        }
+            top: AtomicPtr::new(none_ptr),
+        };
     }
     pub fn push(&self, val: T) {
         let node = Box::new(Some(Node {
             val,
-            next: AtomicPtr::new(null_mut())
+            next: AtomicPtr::new(null_mut()),
         }));
         let node_ptr = Box::leak(node);
 
@@ -39,12 +39,15 @@ impl<T: PartialEq> Stack<T> {
                 Some(node) => {
                     node.next = AtomicPtr::new(top);
                 }
-                None => {
-                    unreachable!()
-                }
+                None => unreachable!(),
             }
 
-            if let Ok(_) = self.top.compare_exchange(top, node_ptr as *mut Option<Node<T>>, Ordering::SeqCst, Ordering::Relaxed) {
+            if let Ok(_) = self.top.compare_exchange(
+                top,
+                node_ptr as *mut Option<Node<T>>,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
                 break;
             }
         }
@@ -53,10 +56,15 @@ impl<T: PartialEq> Stack<T> {
     pub fn pop(&self) -> Option<T> {
         loop {
             let top = self.top.load(Ordering::Relaxed);
-            match unsafe{&mut *top} {
+            match unsafe { &mut *top } {
                 Some(n) => {
-                    if let Ok(_) = self.top.compare_exchange(top, n.next.load(Ordering::Relaxed), Ordering::SeqCst, Ordering::Relaxed) {
-                        let retired_top = unsafe {(*top).take().unwrap()};
+                    if let Ok(_) = self.top.compare_exchange(
+                        top,
+                        n.next.load(Ordering::Relaxed),
+                        Ordering::SeqCst,
+                        Ordering::Relaxed,
+                    ) {
+                        let retired_top = unsafe { (*top).take().unwrap() };
                         break Some(retired_top.val);
                     }
                 }
@@ -71,13 +79,13 @@ impl<T: PartialEq> Stack<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
     use std::sync::Arc;
+    use std::thread;
 
     #[test]
     fn single_thread_push() {
         let s = Stack::new();
-        for i in 0..1<<20 {
+        for i in 0..1 << 20 {
             s.push(i);
         }
     }
@@ -85,10 +93,10 @@ mod tests {
     #[test]
     fn single_thread_pop() {
         let s = Stack::new();
-        for i in 0..1<<20 {
+        for i in 0..1 << 20 {
             s.push(i);
         }
-        for _ in 0..1<<20 {
+        for _ in 0..1 << 20 {
             s.pop();
         }
     }
@@ -97,13 +105,13 @@ mod tests {
     fn two_thread_push_and_pop() {
         let s = Arc::new(Stack::new());
         let c_s = s.clone();
-        let push_thread = thread::spawn(move|| {
-            for i in 0..1<<20 {
+        let push_thread = thread::spawn(move || {
+            for i in 0..1 << 20 {
                 s.push(i);
             }
         });
-        let pop_thread = thread::spawn(move|| {
-            for _ in 0..1<<20 {
+        let pop_thread = thread::spawn(move || {
+            for _ in 0..1 << 20 {
                 c_s.pop();
             }
         });
@@ -116,8 +124,8 @@ mod tests {
         let s = Arc::new(Stack::new());
         let push_threads = (0..10).map(|_| {
             let c_s = s.clone();
-            thread::spawn(move|| {
-                for _ in 0..1<<20 {
+            thread::spawn(move || {
+                for _ in 0..1 << 20 {
                     c_s.push(0);
                 }
             })
@@ -127,8 +135,8 @@ mod tests {
         }
         let pop_threads = (0..10).map(|_| {
             let c_s = s.clone();
-            thread::spawn(move|| {
-                for _ in 0..1<<20 {
+            thread::spawn(move || {
+                for _ in 0..1 << 20 {
                     let res = c_s.pop();
                     assert_eq!(res, Some(0));
                 }
