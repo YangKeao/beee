@@ -70,8 +70,71 @@ impl<T: PartialEq + Copy> Stack<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread;
+    use std::sync::Arc;
 
     #[test]
-    fn test_push() {
+    fn single_thread_push() {
+        let s = Stack::new();
+        for i in 0..1<<20 {
+            s.push(i);
+        }
+    }
+
+    #[test]
+    fn single_thread_pop() {
+        let s = Stack::new();
+        for i in 0..1<<20 {
+            s.push(i);
+        }
+        for _ in 0..1<<20 {
+            s.pop();
+        }
+    }
+
+    #[test]
+    fn two_thread_push_and_pop() {
+        let s = Arc::new(Stack::new());
+        let c_s = s.clone();
+        let push_thread = thread::spawn(move|| {
+            for i in 0..1<<20 {
+                s.push(i);
+            }
+        });
+        let pop_thread = thread::spawn(move|| {
+            for _ in 0..1<<20 {
+                c_s.pop();
+            }
+        });
+        push_thread.join().unwrap();
+        pop_thread.join().unwrap();
+    }
+
+    #[test]
+    fn multi_thread_push_and_pop() {
+        let s = Arc::new(Stack::new());
+        let push_threads = (0..10).map(|_| {
+            let c_s = s.clone();
+            thread::spawn(move|| {
+                for _ in 0..1<<20 {
+                    c_s.push(0);
+                }
+            })
+        });
+        for push_thread in push_threads {
+            push_thread.join().unwrap();
+        }
+        let pop_threads = (0..10).map(|_| {
+            let c_s = s.clone();
+            thread::spawn(move|| {
+                for _ in 0..1<<20 {
+                    let res = c_s.pop();
+                    assert_eq!(res, Some(0));
+                }
+            })
+        });
+        for pop_thread in pop_threads {
+            pop_thread.join().unwrap();
+        }
     }
 }
