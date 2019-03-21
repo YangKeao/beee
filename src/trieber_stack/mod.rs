@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 struct Node<T: PartialEq> {
     pub val: T,
-    pub next: AtomicPtr<Option<Node<T>>>,
+    pub(crate) next: AtomicPtr<Option<Node<T>>>,
 }
 
 impl<T: PartialEq> PartialEq for Node<T> {
