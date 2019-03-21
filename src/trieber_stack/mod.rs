@@ -31,7 +31,7 @@ impl<T: PartialEq> Stack<T> {
             val,
             next: AtomicPtr::new(null_mut()),
         }));
-        let node_ptr = Box::leak(node);
+        let node_ptr = Box::leak(node); // TODO: add some memory reclamation approach.
 
         loop {
             let top = self.top.load(Ordering::Relaxed);
