@@ -37,20 +37,41 @@ enum Status {
 
 struct MCasDesc<T> {
     cases: Vec<Cas<T>>,
-    status: Status,
+    status: Box<Status>,
+}
+
+impl<T> MCasDesc<T> {
+    fn help(&self) {
+        let success = false;
+        for item in self.cases {
+            loop {
+
+            }
+        }
+    }
 }
 
 enum Ptr<T> {
     MCasDesc(MCasDesc<T>),
-    Ptr(*mut T),
+    Ptr(AtomicPtr<T>),
 }
 
 pub(crate) fn m_cas<T>(cases: Vec<Cas<T>>) -> bool {
     let mut m_cas_desc = MCasDesc {
         cases,
-        status: Status::Undecided,
+        status: Box::new(Status::Undecided),
     };
     m_cas_desc.cases.sort();
+    return m_cas_desc.help();
+}
 
-    return true;
+struct CCasDesc<T> {
+    ptr: AtomicPtr<T>,
+    expects: AtomicPtr<T>,
+    new: AtomicPtr<T>,
+    cond: Box<Status>,
+}
+
+pub(crate) fn c_cas<T>(ptr: AtomicPtr<T>, expects: AtomicPtr<T>, new: AtomicPtr<T>, cond: &Status) -> bool {
+    
 }
