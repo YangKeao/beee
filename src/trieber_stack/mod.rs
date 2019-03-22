@@ -34,7 +34,6 @@ impl<T> Stack<T> {
                 }
                 None => unreachable!(),
             }
-
             if let Ok(_) = self.top.compare_exchange(
                 top,
                 node_ptr as *mut Option<Node<T>>,
@@ -75,6 +74,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use std::thread;
+    use test::Bencher;
 
     #[test]
     fn single_thread_push() {
@@ -139,5 +139,35 @@ mod tests {
         for pop_thread in pop_threads {
             pop_thread.join().unwrap();
         }
+    }
+
+    #[bench]
+    fn bench_add_two(b: &mut Bencher) {
+        b.iter(|| {
+            let s = Arc::new(Stack::new());
+            let push_threads = (0..10).map(|_| {
+                let c_s = s.clone();
+                thread::spawn(move || {
+                    for _ in 0..1 << 5 {
+                        c_s.push(0);
+                    }
+                })
+            });
+            for push_thread in push_threads {
+                push_thread.join().unwrap();
+            }
+            let pop_threads = (0..10).map(|_| {
+                let c_s = s.clone();
+                thread::spawn(move || {
+                    for _ in 0..1 << 5 {
+                        let res = c_s.pop();
+                        assert_eq!(res, Some(0));
+                    }
+                })
+            });
+            for pop_thread in pop_threads {
+                pop_thread.join().unwrap();
+            };
+        });
     }
 }
