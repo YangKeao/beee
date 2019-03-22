@@ -51,12 +51,10 @@ impl<T> Stack<T> {
             match unsafe { &mut *top } {
                 Some(n) => {
                     let next = n.next.load(Ordering::Relaxed);
-                    if let Ok(_) = self.top.compare_exchange(
-                        top,
-                        next,
-                        Ordering::SeqCst,
-                        Ordering::Relaxed,
-                    ) {
+                    if let Ok(_) =
+                        self.top
+                            .compare_exchange(top, next, Ordering::SeqCst, Ordering::Relaxed)
+                    {
                         let retired_top = unsafe { (*top).take().unwrap() };
                         break Some(retired_top.val);
                     }
@@ -167,7 +165,7 @@ mod tests {
             });
             for pop_thread in pop_threads {
                 pop_thread.join().unwrap();
-            };
+            }
         });
     }
 }
