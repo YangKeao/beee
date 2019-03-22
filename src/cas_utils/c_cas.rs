@@ -63,7 +63,7 @@ impl<T> CCasPtr<T> {
     pub fn load(&self) -> *mut T {
         loop {
             unsafe {
-                let v = &mut *self.inner.load(Ordering::SeqCst) as *mut CCasUnion<T>; // TODO: set order carefully
+                let v = self.inner.load(Ordering::SeqCst); // TODO: set order carefully
                 match &mut *v {
                     CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(v),
                     CCasUnion::Value(val) => return val as *mut T
