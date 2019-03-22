@@ -24,7 +24,7 @@ impl<T> Stack<T> {
             val,
             next: AtomicPtr::new(null_mut()),
         }));
-        let node_ptr = Box::leak(node); // TODO: add some memory reclamation approach.
+        let node_ptr = Box::leak(node);
 
         loop {
             let top = self.top.load(Ordering::Relaxed);
