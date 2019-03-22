@@ -1,40 +1,37 @@
 use crate::cas_utils::c_cas::{CCasPtr, CCasUnion};
-use crate::cas_utils::{Status, UNDECIDED};
+use crate::cas_utils::Status;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 pub struct MCasDesc<T> {
     inner: Arc<Vec<CCasPtr<MCasUnion<T>>>>,
-    expect: Vec<*mut T>,
-    new: Vec<*mut T>,
+    expect: Vec<*mut CCasUnion<MCasUnion<T>>>,
+    new: Vec<*mut CCasUnion<MCasUnion<T>>>,
     status: Arc<AtomicPtr<Status>>, // TODO: need Atomic Status, but not AtomicPtr
 }
 
 impl<T> MCasDesc<T> {
-    fn help(&self, desc_ptr: *mut MCasUnion<T>) {
+    fn help(&self, desc_ptr: *mut CCasUnion<MCasUnion<T>>) {
         for (index, item) in self.inner.iter().enumerate() {
             loop {
                 item.c_cas(self.expect[index], desc_ptr, self.status.clone());
                 unsafe {
-                    let v = item.inner.load(Ordering::Relaxed);
-                    match &mut *v {
-                        CCasUnion::Value(v) => {
-                            let v_ptr = v as *mut MCasUnion<T>;
-                            if std::ptr::eq(v_ptr, desc_ptr) {
-                                break;
-                            } else {
-                                match v {
-                                    MCasUnion::CCasDesc(v) => {
-                                        v.help(v_ptr);
-                                    }
-                                    _ => {
-                                        // TODO: need Atomic Status CAS
-                                    }
+                    let c_cas_ptr = item.inner.load(Ordering::Relaxed);
+                    if std::ptr::eq(c_cas_ptr, desc_ptr) {
+                        break;
+                    } else {
+                        match &mut *c_cas_ptr {
+                            CCasUnion::Value(v) => match v {
+                                MCasUnion::CCasDesc(v) => {
+                                    v.help(c_cas_ptr);
                                 }
-                            }
+                                _ => {
+                                    // TODO: need Atomic Status CAS
+                                }
+                            },
+                            _ => unimplemented!(),
                         }
-                        _ => unimplemented!(),
                     }
                 }
             }
@@ -48,11 +45,19 @@ pub enum MCasUnion<T> {
 }
 
 pub trait MCas<T> {
-    fn m_cas(&self, expect: Vec<*mut T>, new: Vec<*mut T>);
+    fn m_cas(
+        &self,
+        expect: Vec<*mut CCasUnion<MCasUnion<T>>>,
+        new: Vec<*mut CCasUnion<MCasUnion<T>>>,
+    );
 }
 
 impl<T> MCas<T> for Arc<Vec<CCasPtr<MCasUnion<T>>>> {
-    fn m_cas(&self, expect: Vec<*mut T>, new: Vec<*mut T>) {
+    fn m_cas(
+        &self,
+        expect: Vec<*mut CCasUnion<MCasUnion<T>>>,
+        new: Vec<*mut CCasUnion<MCasUnion<T>>>,
+    ) {
         let start_status = Box::new(Status::Undecided);
         let mut desc = MCasDesc::<T> {
             inner: self.clone(),
