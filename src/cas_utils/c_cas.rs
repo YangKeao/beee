@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
-use crate::mcas::Status;
+use crate::cas_utils::Status;
 use std::sync::Arc;
 
 pub struct CCasDesc<T> {
@@ -32,7 +32,7 @@ impl<T> CCasUnion<T> {
 }
 
 pub struct CCasPtr<T> {
-    inner: Arc<AtomicPtr<CCasUnion<T>>>
+    pub inner: Arc<AtomicPtr<CCasUnion<T>>>
 }
 
 impl<T> CCasPtr<T> {

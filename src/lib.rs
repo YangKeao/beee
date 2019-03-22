@@ -1,6 +1,6 @@
 #![feature(test)]
 extern crate test;
 
-pub mod mcas;
+pub mod cas_utils;
 pub mod trieber_stack;
 mod utils;
