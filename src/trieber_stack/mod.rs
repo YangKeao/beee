@@ -1,4 +1,3 @@
-use std::cmp::PartialEq;
 use std::ptr::null_mut;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
@@ -52,9 +51,10 @@ impl<T> Stack<T> {
             let top = self.top.load(Ordering::Relaxed);
             match unsafe { &mut *top } {
                 Some(n) => {
+                    let next = n.next.load(Ordering::Relaxed);
                     if let Ok(_) = self.top.compare_exchange(
                         top,
-                        n.next.load(Ordering::Relaxed),
+                        next,
                         Ordering::SeqCst,
                         Ordering::Relaxed,
                     ) {
