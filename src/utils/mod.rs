@@ -18,7 +18,7 @@ pub struct AtomicNumLikes {
 
 pub trait AtomicNumLikesMethods<T: From<usize> + Into<usize> + Copy> {
     fn new(v: T) -> AtomicNumLikes;
-    fn get(&mut self, order: Ordering) -> T;
+    fn get(&self, order: Ordering) -> T;
     fn compare_and_swap(&self, current: T, new: T, order: Ordering) -> T;
 }
 
@@ -29,7 +29,7 @@ impl<T: From<usize> + Into<usize> + Copy> AtomicNumLikesMethods<T> for AtomicNum
         }
     }
 
-    fn get(&mut self, order: Ordering) -> T {
+    fn get(&self, order: Ordering) -> T {
         T::from(self.inner.load(order).clone())
     }
 

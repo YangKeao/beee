@@ -1,25 +1,25 @@
 use crate::cas_utils::c_cas::{CCasPtr, CCasUnion};
 use crate::cas_utils::Status;
-use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
 
 pub struct MCasDesc<T> {
     inner: Arc<Vec<CCasPtr<MCasUnion<T>>>>,
     expect: Vec<*mut CCasUnion<MCasUnion<T>>>,
     new: Vec<*mut CCasUnion<MCasUnion<T>>>,
-    status: Arc<AtomicPtr<Status>>, // TODO: need Atomic Status, but not AtomicPtr
+    status: Arc<AtomicNumLikes>,
 }
 
 impl<T> MCasDesc<T> {
-    fn help(&self, desc_ptr: *mut CCasUnion<MCasUnion<T>>) {
-        for (index, item) in self.inner.iter().enumerate() {
-            loop {
+    fn help(&self, desc_ptr: *mut CCasUnion<MCasUnion<T>>) -> bool {
+        'iter: for (index, item) in self.inner.iter().enumerate() {
+            'retry: loop {
                 item.c_cas(self.expect[index], desc_ptr, self.status.clone());
                 unsafe {
                     let c_cas_ptr = item.inner.load(Ordering::Relaxed);
                     if std::ptr::eq(c_cas_ptr, desc_ptr) {
-                        break;
+                        break 'retry;
                     } else {
                         match &mut *c_cas_ptr {
                             CCasUnion::Value(v) => match v {
@@ -27,15 +27,26 @@ impl<T> MCasDesc<T> {
                                     v.help(c_cas_ptr);
                                 }
                                 _ => {
-                                    // TODO: need Atomic Status CAS
+                                    self.status.compare_and_swap(Status::Undecided, Status::Failed, Ordering::SeqCst);
+                                    break 'iter;
                                 }
                             },
-                            _ => unimplemented!(),
+                            _ => unimplemented!(), // TODO: Maybe we need to help CCAS
                         }
                     }
                 }
             }
+            if index == self.inner.len() - 1 {
+                self.status.compare_and_swap(Status::Undecided, Status::Successful, Ordering::SeqCst);
+            }
         }
+
+        let cond: Status = self.status.get(Ordering::Relaxed);
+        let success = cond == Status::Successful;
+        for (index, item) in self.inner.iter().enumerate() {
+            item.inner.compare_and_swap(desc_ptr, if success {self.new[index]} else {self.expect[index]}, Ordering::SeqCst);
+        }
+        return success;
     }
 }
 
@@ -58,12 +69,11 @@ impl<T> MCas<T> for Arc<Vec<CCasPtr<MCasUnion<T>>>> {
         expect: Vec<*mut CCasUnion<MCasUnion<T>>>,
         new: Vec<*mut CCasUnion<MCasUnion<T>>>,
     ) {
-        let start_status = Box::new(Status::Undecided);
         let mut desc = MCasDesc::<T> {
             inner: self.clone(),
             expect,
             new,
-            status: Arc::new(AtomicPtr::new(Box::leak(start_status))),
+            status: Arc::new(AtomicNumLikes::new(Status::Undecided)),
         };
     }
 }

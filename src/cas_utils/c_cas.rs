@@ -2,17 +2,19 @@ use crate::cas_utils::Status;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
 
 pub struct CCasDesc<T> {
     inner: Arc<AtomicPtr<CCasUnion<T>>>,
     expect: *mut CCasUnion<T>,
     new: *mut CCasUnion<T>,
-    cond: Arc<AtomicPtr<Status>>,
+    cond: Arc<AtomicNumLikes>,
 }
 
 impl<T> CCasDesc<T> {
     pub fn help(&self, desc_ptr: *mut CCasUnion<T>) {
-        let success = unsafe { *self.cond.load(Ordering::Relaxed) == Status::Undecided };
+        let cond: Status = self.cond.get(Ordering::Relaxed);
+        let success = unsafe { cond == Status::Undecided };
         self.inner.compare_and_swap(
             desc_ptr,
             if success { self.new } else { self.expect },
@@ -44,7 +46,7 @@ impl<T> CCasPtr<T> {
         &self,
         expect: *mut CCasUnion<T>,
         new: *mut CCasUnion<T>,
-        cond: Arc<AtomicPtr<Status>>,
+        cond: Arc<AtomicNumLikes>,
     ) {
         let mut desc = CCasUnion::CCasDesc(CCasDesc::<T> {
             inner: self.inner.clone(),
