@@ -7,12 +7,12 @@ pub struct CCasDesc<T> {
     inner: Arc<AtomicPtr<CCasUnion<T>>>,
     expect: *mut CCasUnion<T>,
     new: *mut CCasUnion<T>,
-    cond: Arc<Status>,
+    cond: Arc<AtomicPtr<Status>>,
 }
 
 impl<T> CCasDesc<T> {
     pub fn help(&self, desc_ptr: *mut CCasUnion<T>) {
-        let success = self.cond == Arc::new(Status::Undecided);
+        let success = unsafe {*self.cond.load(Ordering::Relaxed) == Status::Undecided};
         self.inner.compare_and_swap(desc_ptr, if success {self.new} else {self.expect}, Ordering::SeqCst); // TODO: set order carefully
     }
 }
@@ -36,7 +36,7 @@ pub struct CCasPtr<T> {
 }
 
 impl<T> CCasPtr<T> {
-    pub fn c_cas(&self, expect: *mut CCasUnion<T>, new: *mut CCasUnion<T>, cond: Arc<Status>) {
+    pub fn c_cas(&self, expect: *mut CCasUnion<T>, new: *mut CCasUnion<T>, cond: Arc<AtomicPtr<Status>>) {
         let mut desc = CCasUnion::CCasDesc(CCasDesc::<T> {
             inner: self.inner.clone(),
             expect,
