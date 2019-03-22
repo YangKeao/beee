@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicPtr;
-use crate::cas_utils::c_cas::{CCasUnion, CCasPtr};
+use crate::cas_utils::c_cas::{CCasPtr, CCasUnion};
 use crate::cas_utils::{Status, UNDECIDED};
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 pub struct MCasDesc<T> {
     inner: Arc<Vec<CCasPtr<MCasUnion<T>>>>,
@@ -22,21 +22,19 @@ impl<T> MCasDesc<T> {
                         CCasUnion::Value(v) => {
                             let v_ptr = v as *mut MCasUnion<T>;
                             if std::ptr::eq(v_ptr, desc_ptr) {
-                                break
+                                break;
                             } else {
                                 match v {
                                     MCasUnion::CCasDesc(v) => {
                                         v.help(v_ptr);
                                     }
                                     _ => {
-                                        self.status.compare_and_swap()
+                                        // TODO: need Atomic Status CAS
                                     }
                                 }
                             }
                         }
-                        _ => {
-                            unimplemented!()
-                        }
+                        _ => unimplemented!(),
                     }
                 }
             }
@@ -46,11 +44,11 @@ impl<T> MCasDesc<T> {
 
 pub enum MCasUnion<T> {
     CCasDesc(MCasDesc<T>),
-    Value(T)
+    Value(T),
 }
 
 pub trait MCas<T> {
-    fn m_cas(&self, expect: Vec<*mut T>, new: Vec<*mut T>) ;
+    fn m_cas(&self, expect: Vec<*mut T>, new: Vec<*mut T>);
 }
 
 impl<T> MCas<T> for Arc<Vec<CCasPtr<MCasUnion<T>>>> {
@@ -60,7 +58,7 @@ impl<T> MCas<T> for Arc<Vec<CCasPtr<MCasUnion<T>>>> {
             inner: self.clone(),
             expect,
             new,
-            status: Arc::new(AtomicPtr::new(Box::leak(start_status)))
+            status: Arc::new(AtomicPtr::new(Box::leak(start_status))),
         };
     }
 }
