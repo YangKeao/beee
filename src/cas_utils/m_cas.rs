@@ -31,7 +31,7 @@ impl<T> MCasDesc<T> {
                                     break 'iter;
                                 }
                             },
-                            _ => unimplemented!(), // TODO: Maybe we need to help CCAS
+                            _ => unimplemented!(), // TODO: Maybe we need to help CCAS? or this cannot happen?
                         }
                     }
                 }
