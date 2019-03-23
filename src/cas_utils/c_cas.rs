@@ -141,6 +141,7 @@ mod test {
         assert_eq!(unsafe {*c_cas_ptr.load()}, 2);
     }
 
+    // TODO: should we provide some better api to handle ptr across different thread?
     struct SendPtr<T> {
         ptr: *mut T
     }
