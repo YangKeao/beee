@@ -1,9 +1,9 @@
 use crate::cas_utils::Status;
+use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
+use std::cell::UnsafeCell;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
-use std::cell::UnsafeCell;
 
 pub struct CCasDesc<T> {
     inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>,
@@ -15,7 +15,7 @@ pub struct CCasDesc<T> {
 impl<T> CCasDesc<T> {
     pub fn help(&self, desc_ptr: *mut CCasUnion<T>) {
         let cond: Status = self.cond.get(Ordering::Relaxed);
-        let success = unsafe { cond == Status::Undecided };
+        let success = cond == Status::Undecided;
         unsafe {
             (*self.inner.get()).compare_and_swap(
                 desc_ptr,
@@ -47,7 +47,7 @@ pub struct CCasPtr<T> {
 impl<T> Clone for CCasPtr<T> {
     fn clone(&self) -> Self {
         CCasPtr::<T> {
-            inner: self.inner.clone()
+            inner: self.inner.clone(),
         }
     }
 }
@@ -79,7 +79,7 @@ impl<T> CCasPtr<T> {
                 if std::ptr::eq(res, desc.borrow_mut_c_cas_desc().expect) {
                     desc.borrow_mut_c_cas_desc().help(desc_ptr);
                 } else {
-                    match unsafe { &*res } {
+                    match &*res {
                         CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(desc_ptr),
                         _ => return, // TODO: mark failed
                     }

@@ -1,8 +1,8 @@
 use crate::cas_utils::c_cas::{CCasPtr, CCasUnion};
 use crate::cas_utils::Status;
+use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods, AtomicPtrAddOn};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods, AtomicPtrAddOn};
 
 pub struct MCasDesc<T> {
     inner: Arc<Vec<SingleCas<T>>>,
@@ -13,7 +13,8 @@ impl<T> MCasDesc<T> {
     fn help(&self, desc_ptr: *mut CCasUnion<MCasUnion<T>>) -> bool {
         'iter: for (index, item) in self.inner.iter().enumerate() {
             'retry: loop {
-                item.origin.c_cas(item.expect, desc_ptr, self.status.clone());
+                item.origin
+                    .c_cas(item.expect, desc_ptr, self.status.clone());
                 unsafe {
                     let c_cas_ptr = (*item.origin.inner.get()).load(Ordering::Relaxed);
                     if std::ptr::eq(c_cas_ptr, desc_ptr) {
@@ -25,7 +26,11 @@ impl<T> MCasDesc<T> {
                                     v.help(c_cas_ptr);
                                 }
                                 _ => {
-                                    self.status.compare_and_swap(Status::Undecided, Status::Failed, Ordering::SeqCst);
+                                    self.status.compare_and_swap(
+                                        Status::Undecided,
+                                        Status::Failed,
+                                        Ordering::SeqCst,
+                                    );
                                     break 'iter;
                                 }
                             },
@@ -35,7 +40,11 @@ impl<T> MCasDesc<T> {
                 }
             }
             if index == self.inner.len() - 1 {
-                self.status.compare_and_swap(Status::Undecided, Status::Successful, Ordering::SeqCst);
+                self.status.compare_and_swap(
+                    Status::Undecided,
+                    Status::Successful,
+                    Ordering::SeqCst,
+                );
             }
         }
 
@@ -43,7 +52,11 @@ impl<T> MCasDesc<T> {
         let success = cond == Status::Successful;
         for item in self.inner.iter() {
             unsafe {
-                (*item.origin.inner.get()).compare_and_swap(desc_ptr, if success {item.new} else {item.expect}, Ordering::SeqCst);
+                (*item.origin.inner.get()).compare_and_swap(
+                    desc_ptr,
+                    if success { item.new } else { item.expect },
+                    Ordering::SeqCst,
+                );
             }
         }
         return success;
@@ -56,15 +69,13 @@ pub enum MCasUnion<T> {
 }
 
 pub trait MCas<T> {
-    fn m_cas(
-        &self,
-    ) -> bool;
+    fn m_cas(&self) -> bool;
 }
 
 pub struct SingleCas<T> {
     origin: CCasPtr<MCasUnion<T>>,
     expect: *mut CCasUnion<MCasUnion<T>>,
-    new: *mut CCasUnion<MCasUnion<T>>
+    new: *mut CCasUnion<MCasUnion<T>>,
 }
 
 impl<T> Clone for SingleCas<T> {
@@ -79,37 +90,59 @@ impl<T> Clone for SingleCas<T> {
 
 impl<T> Ord for SingleCas<T> {
     fn cmp(&self, other: &SingleCas<T>) -> std::cmp::Ordering {
-        unsafe {self.origin.inner.get_addr().cmp(&other.origin.inner.get_addr())}
+        unsafe {
+            self.origin
+                .inner
+                .get_addr()
+                .cmp(&other.origin.inner.get_addr())
+        }
     }
 }
 
 impl<T> PartialOrd for SingleCas<T> {
     fn partial_cmp(&self, other: &SingleCas<T>) -> Option<std::cmp::Ordering> {
-        unsafe {Some(self.origin.inner.get_addr().cmp(&other.origin.inner.get_addr()))}
+        unsafe {
+            Some(
+                self.origin
+                    .inner
+                    .get_addr()
+                    .cmp(&other.origin.inner.get_addr()),
+            )
+        }
     }
 }
 
 impl<T> PartialEq for SingleCas<T> {
     fn eq(&self, other: &SingleCas<T>) -> bool {
-        unsafe {self.origin.inner.get_addr().eq(&other.origin.inner.get_addr())}
+        unsafe {
+            self.origin
+                .inner
+                .get_addr()
+                .eq(&other.origin.inner.get_addr())
+        }
     }
 }
 
 impl<T> Eq for SingleCas<T> {}
 
 impl<T> MCas<T> for Vec<SingleCas<T>> {
-    fn m_cas(
-        &self,
-    ) -> bool {
+    fn m_cas(&self) -> bool {
         let mut sort_self: Vec<SingleCas<T>> = self.clone();
         sort_self.sort();
 
-        let mut desc = MCasDesc::<T> {
+        let mut desc = CCasUnion::Value(MCasUnion::MCasDesc(MCasDesc::<T> {
             inner: Arc::new(sort_self),
             status: Arc::new(AtomicNumLikes::new(Status::Undecided)),
-        };
+        }));
+        let desc_ptr = &mut desc as *mut CCasUnion<MCasUnion<T>>;
 
-        return desc.help();
+        match desc {
+            CCasUnion::Value(v) => match v {
+                MCasUnion::MCasDesc(v) => v.help(desc_ptr),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -121,12 +154,12 @@ impl<T> MCasRead<T> for Arc<CCasPtr<MCasUnion<T>>> {
     fn read(&self) -> *mut T {
         loop {
             let c_cas_ptr = self.load();
-            let c_union_ptr = unsafe {(*self.inner.get()).load(Ordering::Relaxed)};
+            let c_union_ptr = unsafe { (*self.inner.get()).load(Ordering::Relaxed) };
             unsafe {
                 match &mut *c_cas_ptr {
                     MCasUnion::MCasDesc(desc) => {
                         desc.help(c_union_ptr);
-                    },
+                    }
                     MCasUnion::Value(v) => {
                         return v as *mut T;
                     }

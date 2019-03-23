@@ -34,6 +34,9 @@ impl<T: From<usize> + Into<usize> + Copy> AtomicNumLikesMethods<T> for AtomicNum
     }
 
     fn compare_and_swap(&self, current: T, new: T, order: Ordering) -> T {
-        T::from(self.inner.compare_and_swap(current.into(), new.into(), order))
+        T::from(
+            self.inner
+                .compare_and_swap(current.into(), new.into(), order),
+        )
     }
 }

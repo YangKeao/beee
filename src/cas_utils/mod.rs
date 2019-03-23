@@ -11,7 +11,7 @@ impl From<usize> for Status {
             0 => Status::Undecided,
             1 => Status::Failed,
             2 => Status::Successful,
-            _ => panic!() // TODO: better way
+            _ => panic!(), // TODO: better way
         }
     }
 }
