@@ -3,9 +3,10 @@ use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
+use std::cell::UnsafeCell;
 
 pub struct CCasDesc<T> {
-    inner: Arc<AtomicPtr<CCasUnion<T>>>,
+    inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>,
     expect: *mut CCasUnion<T>,
     new: *mut CCasUnion<T>,
     cond: Arc<AtomicNumLikes>,
@@ -15,11 +16,13 @@ impl<T> CCasDesc<T> {
     pub fn help(&self, desc_ptr: *mut CCasUnion<T>) {
         let cond: Status = self.cond.get(Ordering::Relaxed);
         let success = unsafe { cond == Status::Undecided };
-        self.inner.compare_and_swap(
-            desc_ptr,
-            if success { self.new } else { self.expect },
-            Ordering::SeqCst,
-        ); // TODO: set order carefully
+        unsafe {
+            (*self.inner.get()).compare_and_swap(
+                desc_ptr,
+                if success { self.new } else { self.expect },
+                Ordering::SeqCst,
+            ); // TODO: set order carefully
+        }
     }
 }
 
@@ -38,7 +41,15 @@ impl<T> CCasUnion<T> {
 }
 
 pub struct CCasPtr<T> {
-    pub inner: Arc<AtomicPtr<CCasUnion<T>>>,
+    pub inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>,
+}
+
+impl<T> Clone for CCasPtr<T> {
+    fn clone(&self) -> Self {
+        CCasPtr::<T> {
+            inner: self.inner.clone()
+        }
+    }
 }
 
 impl<T> CCasPtr<T> {
@@ -59,17 +70,19 @@ impl<T> CCasPtr<T> {
         let desc_ptr = &mut desc as *mut CCasUnion<T>;
 
         loop {
-            let res = desc.borrow_mut_c_cas_desc().inner.compare_and_swap(
-                expect_ptr,
-                desc_ptr,
-                Ordering::SeqCst,
-            ); // TODO: set order carefully
-            if std::ptr::eq(res, desc.borrow_mut_c_cas_desc().expect) {
-                desc.borrow_mut_c_cas_desc().help(desc_ptr);
-            } else {
-                match unsafe { &*res } {
-                    CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(desc_ptr),
-                    _ => return, // TODO: mark failed
+            unsafe {
+                let res = (*desc.borrow_mut_c_cas_desc().inner.get()).compare_and_swap(
+                    expect_ptr,
+                    desc_ptr,
+                    Ordering::SeqCst,
+                ); // TODO: set order carefully
+                if std::ptr::eq(res, desc.borrow_mut_c_cas_desc().expect) {
+                    desc.borrow_mut_c_cas_desc().help(desc_ptr);
+                } else {
+                    match unsafe { &*res } {
+                        CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(desc_ptr),
+                        _ => return, // TODO: mark failed
+                    }
                 }
             }
         }
@@ -78,7 +91,7 @@ impl<T> CCasPtr<T> {
     pub fn load(&self) -> *mut T {
         loop {
             unsafe {
-                let v = self.inner.load(Ordering::SeqCst); // TODO: set order carefully
+                let v = (*self.inner.get()).load(Ordering::SeqCst); // TODO: set order carefully
                 match &mut *v {
                     CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(v),
                     CCasUnion::Value(val) => return val as *mut T,
