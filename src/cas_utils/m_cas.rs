@@ -23,7 +23,7 @@ impl<T> MCasDesc<T> {
                     } else {
                         match &mut *c_cas_ptr {
                             CCasUnion::Value(v) => match v {
-                                MCasUnion::CCasDesc(v) => {
+                                MCasUnion::MCasDesc(v) => {
                                     v.help(c_cas_ptr);
                                 }
                                 _ => {
@@ -51,7 +51,7 @@ impl<T> MCasDesc<T> {
 }
 
 pub enum MCasUnion<T> {
-    CCasDesc(MCasDesc<T>),
+    MCasDesc(MCasDesc<T>),
     Value(T),
 }
 
@@ -80,4 +80,19 @@ impl<T> MCas<T> for Arc<Vec<CCasPtr<MCasUnion<T>>>> {
 
 pub trait MCasRead<T> {
     fn read(&self) -> *mut T;
+}
+
+impl<T> MCasRead<T> for Arc<Vec<CCasPtr<MCasUnion<T>>>> {
+    fn read(&self) -> *mut T {
+        for item in self.iter() {
+            let c_cas_ptr = item.load();
+            let c_union_ptr = item.inner.load(Ordering::Relaxed);
+            unsafe {
+                match &mut *c_cas_ptr {
+                    MCasUnion::MCasDesc(desc) => desc.help(c_union_ptr),
+                    MCasUnion::Value(v) => return v as *mut T
+                }
+            }
+        }
+    }
 }
