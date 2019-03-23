@@ -43,6 +43,7 @@ impl<T> CCasUnion<T> {
 pub struct CCasPtr<T> {
     pub inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>,
 }
+unsafe impl<T> std::marker::Send for CCasPtr<T> {}
 
 impl<T> Clone for CCasPtr<T> {
     fn clone(&self) -> Self {
@@ -115,6 +116,10 @@ impl<T> CCasPtr<T> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::thread;
+
+    const THREAD_NUM: usize = 100;
+    const ITER_NUM: usize = 10000;
 
     #[test]
     fn test_single_c_cas() {
@@ -131,5 +136,75 @@ mod test {
 
         c_cas_ptr.c_cas(num_ptr, num2_ptr, success.clone());
         assert_eq!(unsafe {*c_cas_ptr.load()}, 1);
+
+        c_cas_ptr.c_cas(num_ptr, num2_ptr, undecided.clone());
+        assert_eq!(unsafe {*c_cas_ptr.load()}, 2);
+    }
+
+    struct SendPtr<T> {
+        ptr: *mut T
+    }
+    unsafe impl<T> Send for SendPtr<T> {}
+    impl<T> Clone for SendPtr<T> {
+        fn clone(&self) -> Self {
+            SendPtr::<T> {
+                ptr: self.ptr.clone()
+            }
+        }
+    }
+    impl<T> SendPtr<T> {
+        fn new(ptr: *mut T) -> Self {
+            SendPtr::<T> {
+                ptr,
+            }
+        }
+        fn get_ptr(&self) -> *mut T {
+            self.ptr
+        }
+    }
+
+    #[test]
+    fn multi_thread_test() {
+        let success = Arc::new(AtomicNumLikes::new(Status::Successful));
+        let undecided = Arc::new(AtomicNumLikes::new(Status::Undecided));
+
+        let mut num = CCasUnion::Value(1);
+        let num_ptr = SendPtr::new(&mut num as *mut CCasUnion<i32>);
+
+        let mut num2 =CCasUnion::Value(2);
+        let num2_ptr = SendPtr::new(&mut num2 as *mut CCasUnion<i32>);
+
+        let c_cas_ptr = CCasPtr::from_c_cas_union(num_ptr.get_ptr());
+        let write_threads = (0..THREAD_NUM).map(|_| {
+            let c_cas_ptr = c_cas_ptr.clone();
+            let num_ptr = num_ptr.clone();
+            let num2_ptr = num2_ptr.clone();
+            let success = success.clone();
+            let undecided = undecided.clone();
+            thread::spawn(move || {
+                for i in 0..ITER_NUM {
+                    c_cas_ptr.c_cas(num_ptr.get_ptr(), num2_ptr.get_ptr(), success.clone());
+                    c_cas_ptr.c_cas(num_ptr.get_ptr(), num2_ptr.get_ptr(), undecided.clone());
+                    c_cas_ptr.c_cas(num_ptr.get_ptr(), num2_ptr.get_ptr(), undecided.clone());
+                    c_cas_ptr.c_cas(num_ptr.get_ptr(), num2_ptr.get_ptr(), success.clone());
+                }
+            })
+        });
+        let read_threads = (0..THREAD_NUM).map(|_| {
+            let c_cas_ptr = c_cas_ptr.clone();
+            thread::spawn(move || {
+                for i in 0..ITER_NUM {
+                    let num = unsafe { *c_cas_ptr.load() };
+                    assert!(num == 1 || num == 2);
+                }
+            })
+        });
+
+        for t in write_threads {
+            t.join().unwrap();
+        }
+        for t in read_threads {
+            t.join().unwrap();
+        }
     }
 }
