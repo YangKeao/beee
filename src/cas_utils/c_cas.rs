@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 pub struct CCasDesc<T> {
-    inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>,
+    inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>, // TODO: UnsafeCell is only for get_addr, maybe there is a better way to get addr rather than use UnsafeCell?
     expect: *mut CCasUnion<T>,
     new: *mut CCasUnion<T>,
     cond: Arc<AtomicNumLikes>,
