@@ -34,7 +34,9 @@ impl<T> MCasDesc<T> {
                                     break 'iter;
                                 }
                             },
-                            _ => unimplemented!(), // TODO: Maybe we need to help CCAS? or this cannot happen?
+                            CCasUnion::CCasDesc(c_desc) => {
+                                c_desc.help(c_cas_ptr);
+                            }
                         }
                     }
                 }
