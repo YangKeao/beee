@@ -112,12 +112,14 @@ impl<T> Clone for CCasPtr<T> {
 impl<T> CCasPtr<T> {
     pub fn from_value(val: T) -> CCasPtr<T> {
         CCasPtr::<T> {
-            inner: Arc::new(UnsafeCell::new(AtomicPtr::new(Box::leak(Box::new(CCasUnion::Value(val))))))
+            inner: Arc::new(UnsafeCell::new(AtomicPtr::new(Box::leak(Box::new(
+                CCasUnion::Value(val),
+            ))))),
         }
     }
     pub fn from_c_cas_union(union: *mut CCasUnion<T>) -> CCasPtr<T> {
         CCasPtr::<T> {
-            inner: Arc::new(UnsafeCell::new(AtomicPtr::new(union)))
+            inner: Arc::new(UnsafeCell::new(AtomicPtr::new(union))),
         }
     }
     pub fn c_cas(
@@ -179,21 +181,19 @@ mod test {
 
     // TODO: should we provide some better api to handle ptr across different thread?
     struct SendPtr<T> {
-        ptr: *mut T
+        ptr: *mut T,
     }
     unsafe impl<T> Send for SendPtr<T> {}
     impl<T> Clone for SendPtr<T> {
         fn clone(&self) -> Self {
             SendPtr::<T> {
-                ptr: self.ptr.clone()
+                ptr: self.ptr.clone(),
             }
         }
     }
     impl<T> SendPtr<T> {
         fn new(ptr: *mut T) -> Self {
-            SendPtr::<T> {
-                ptr,
-            }
+            SendPtr::<T> { ptr }
         }
         fn get_ptr(&self) -> *mut T {
             self.ptr
@@ -208,7 +208,7 @@ mod test {
         let mut num = CCasUnion::Value(1);
         let num_ptr = SendPtr::new(&mut num as *mut CCasUnion<i32>);
 
-        let mut num2 =CCasUnion::Value(2);
+        let mut num2 = CCasUnion::Value(2);
         let num2_ptr = SendPtr::new(&mut num2 as *mut CCasUnion<i32>);
 
         let c_cas_ptr = CCasPtr::from_c_cas_union(num_ptr.get_ptr());
