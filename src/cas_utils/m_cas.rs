@@ -150,7 +150,7 @@ pub trait MCasRead<T> {
     fn read(&self) -> *mut T;
 }
 
-impl<T> MCasRead<T> for Arc<CCasPtr<MCasUnion<T>>> {
+impl<T> MCasRead<T> for CCasPtr<MCasUnion<T>> {
     fn read(&self) -> *mut T {
         loop {
             let c_cas_ptr = self.load();
@@ -166,5 +166,55 @@ impl<T> MCasRead<T> for Arc<CCasPtr<MCasUnion<T>>> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn single_thread_m_cas() {
+        let mut num1 = CCasUnion::Value(MCasUnion::Value(1));
+        let  num1_ptr = &mut num1 as *mut CCasUnion<MCasUnion<i32>>;
+        let mut num2 = CCasUnion::Value(MCasUnion::Value(2));
+        let  num2_ptr = &mut num2 as *mut CCasUnion<MCasUnion<i32>>;
+        let mut num3 = CCasUnion::Value(MCasUnion::Value(3));
+        let  num3_ptr = &mut num3 as *mut CCasUnion<MCasUnion<i32>>;
+        let mut num4 = CCasUnion::Value(MCasUnion::Value(4));
+        let  num4_ptr = &mut num4 as *mut CCasUnion<MCasUnion<i32>>;
+
+        let c_cas_ptr_origin1 = CCasPtr::from_c_cas_union(num1_ptr);
+        let c_cas_ptr_origin3 = CCasPtr::from_c_cas_union(num3_ptr);
+        let first_cas = SingleCas {
+            origin: c_cas_ptr_origin1.clone(),
+            expect: num2_ptr,
+            new: num2_ptr
+        };
+        let second_cas = SingleCas {
+            origin: c_cas_ptr_origin3.clone(),
+            expect: num3_ptr,
+            new: num4_ptr
+        };
+
+        let m_cas = vec![first_cas, second_cas];
+        m_cas.m_cas();
+        assert_eq!(unsafe {*c_cas_ptr_origin1.read()}, 1);
+        assert_eq!(unsafe {*c_cas_ptr_origin3.read()}, 3);
+
+        let first_cas = SingleCas {
+            origin: c_cas_ptr_origin1.clone(),
+            expect: num1_ptr,
+            new: num2_ptr
+        };
+        let second_cas = SingleCas {
+            origin: c_cas_ptr_origin3.clone(),
+            expect: num3_ptr,
+            new: num4_ptr
+        };
+        let m_cas = vec![first_cas, second_cas];
+        m_cas.m_cas();
+        assert_eq!(unsafe {*c_cas_ptr_origin1.read()}, 2);
+        assert_eq!(unsafe {*c_cas_ptr_origin3.read()}, 4);
     }
 }
