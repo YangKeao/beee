@@ -35,7 +35,6 @@
 
 use crate::cas_utils::Status;
 use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
-use std::cell::UnsafeCell;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -49,7 +48,7 @@ use std::sync::Arc;
 /// * `new`: New value of inner
 /// * `cond`: Cond var. Only if it equals Status::Undecided will cas happens
 pub struct CCasDesc<T> {
-    inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>, // TODO: UnsafeCell is only for get_addr, maybe there is a better way to get addr rather than use UnsafeCell?
+    inner: Arc<AtomicPtr<CCasUnion<T>>>, // TODO: UnsafeCell is only for get_addr, maybe there is a better way to get addr rather than use UnsafeCell?
     expect: *mut CCasUnion<T>,
     new: *mut CCasUnion<T>,
     cond: Arc<AtomicNumLikes>,
@@ -64,13 +63,11 @@ impl<T> CCasDesc<T> {
     pub fn help(&self, desc_ptr: *mut CCasUnion<T>) {
         let cond: Status = self.cond.get(Ordering::Relaxed);
         let success = cond == Status::Undecided;
-        unsafe {
-            (*self.inner.get()).compare_and_swap(
-                desc_ptr,
-                if success { self.new } else { self.expect },
-                Ordering::SeqCst,
-            ); // TODO: set order carefully
-        }
+        self.inner.compare_and_swap(
+            desc_ptr,
+            if success { self.new } else { self.expect },
+            Ordering::SeqCst,
+        ); // TODO: set order carefully
     }
 }
 
@@ -97,7 +94,7 @@ impl<T> CCasUnion<T> {
 
 /// Only an alias of `Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>`
 pub struct CCasPtr<T> {
-    pub inner: Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>,
+    pub inner: Arc<AtomicPtr<CCasUnion<T>>>,
 }
 unsafe impl<T> std::marker::Send for CCasPtr<T> {}
 
@@ -112,14 +109,12 @@ impl<T> Clone for CCasPtr<T> {
 impl<T> CCasPtr<T> {
     pub fn from_value(val: T) -> CCasPtr<T> {
         CCasPtr::<T> {
-            inner: Arc::new(UnsafeCell::new(AtomicPtr::new(Box::leak(Box::new(
-                CCasUnion::Value(val),
-            ))))),
+            inner: Arc::new(AtomicPtr::new(Box::leak(Box::new(CCasUnion::Value(val))))),
         }
     }
     pub fn from_c_cas_union(union: *mut CCasUnion<T>) -> CCasPtr<T> {
         CCasPtr::<T> {
-            inner: Arc::new(UnsafeCell::new(AtomicPtr::new(union))),
+            inner: Arc::new(AtomicPtr::new(union)),
         }
     }
     pub fn c_cas(
@@ -140,7 +135,7 @@ impl<T> CCasPtr<T> {
 
         loop {
             unsafe {
-                let res = (*desc.borrow_mut_c_cas_desc().inner.get()).compare_and_swap(
+                let res = desc.borrow_mut_c_cas_desc().inner.compare_and_swap(
                     expect_ptr,
                     desc_ptr,
                     Ordering::SeqCst,
@@ -161,7 +156,7 @@ impl<T> CCasPtr<T> {
     pub fn load(&self) -> *mut T {
         loop {
             unsafe {
-                let v = (*self.inner.get()).load(Ordering::SeqCst); // TODO: set order carefully
+                let v = self.inner.load(Ordering::SeqCst); // TODO: set order carefully
                 match &mut *v {
                     CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(v),
                     CCasUnion::Value(val) => return val as *mut T,

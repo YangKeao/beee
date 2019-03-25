@@ -16,7 +16,7 @@ impl<T> MCasDesc<T> {
                 item.origin
                     .c_cas(item.expect, desc_ptr, self.status.clone());
                 unsafe {
-                    let c_cas_ptr = (*item.origin.inner.get()).load(Ordering::Relaxed);
+                    let c_cas_ptr = item.origin.inner.load(Ordering::Relaxed);
                     if std::ptr::eq(c_cas_ptr, desc_ptr) {
                         break 'retry;
                     } else {
@@ -53,13 +53,11 @@ impl<T> MCasDesc<T> {
         let cond: Status = self.status.get(Ordering::Relaxed);
         let success = cond == Status::Successful;
         for item in self.inner.iter() {
-            unsafe {
-                (*item.origin.inner.get()).compare_and_swap(
-                    desc_ptr,
-                    if success { item.new } else { item.expect },
-                    Ordering::SeqCst,
-                );
-            }
+            item.origin.inner.compare_and_swap(
+                desc_ptr,
+                if success { item.new } else { item.expect },
+                Ordering::SeqCst,
+            );
         }
         return success;
     }
@@ -156,7 +154,7 @@ impl<T> MCasRead<T> for CCasPtr<MCasUnion<T>> {
     fn read(&self) -> *mut T {
         loop {
             let c_cas_ptr = self.load();
-            let c_union_ptr = unsafe { (*self.inner.get()).load(Ordering::Relaxed) };
+            let c_union_ptr = self.inner.load(Ordering::Relaxed);
             unsafe {
                 match &mut *c_cas_ptr {
                     MCasUnion::MCasDesc(desc) => {

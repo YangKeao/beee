@@ -1,4 +1,5 @@
 #![feature(test)]
+#![feature(cfg_target_has_atomic)]
 extern crate test;
 
 pub mod cas_utils;
