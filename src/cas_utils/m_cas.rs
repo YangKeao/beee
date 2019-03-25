@@ -172,6 +172,11 @@ impl<T> MCasRead<T> for CCasPtr<MCasUnion<T>> {
 }
 
 pub type AtomicMCasPtr<T> = CCasPtr<MCasUnion<T>>;
+impl<T> AtomicMCasPtr<T> {
+    pub fn new(ptr: &mut MCasPtr<T>) -> Self {
+        CCasPtr::from_c_cas_union(ptr.get_mut_ptr())
+    }
+}
 
 pub type MCasPtr<T> = CCasUnion<MCasUnion<T>>;
 impl<T> MCasPtr<T> {
@@ -180,9 +185,6 @@ impl<T> MCasPtr<T> {
     }
     pub fn get_mut_ptr(&mut self) -> *mut Self {
         self as *mut Self
-    }
-    pub fn get_atomic_ptr(&mut self) -> AtomicMCasPtr<T> {
-        CCasPtr::from_c_cas_union(self.get_mut_ptr())
     }
 }
 
@@ -197,14 +199,14 @@ mod test {
         let mut num3 = MCasPtr::new(3);
         let mut num4 = MCasPtr::new(4);
 
-        let atomic_num1 = num1.get_atomic_ptr();
+        let atomic_num1 = AtomicMCasPtr::new(&mut num1);
         let first_cas = SingleCas {
             origin: atomic_num1.clone(),
             expect: num2.get_mut_ptr(),
             new: num2.get_mut_ptr(),
         };
 
-        let atomic_num3 = num3.get_atomic_ptr();
+        let atomic_num3 = AtomicMCasPtr::new(&mut num3);
         let second_cas = SingleCas {
             origin: atomic_num3.clone(),
             expect: num3.get_mut_ptr(),
