@@ -214,7 +214,7 @@ mod test {
         };
 
         let m_cas = vec![first_cas, second_cas];
-        m_cas.m_cas();
+        assert_eq!(m_cas.m_cas(), false);
         assert_eq!(unsafe { *atomic_num1.read() }, 1);
         assert_eq!(unsafe { *atomic_num3.read() }, 3);
 
@@ -229,7 +229,7 @@ mod test {
             new: num4.get_mut_ptr(),
         };
         let m_cas = vec![first_cas, second_cas];
-        m_cas.m_cas();
+        assert_eq!(m_cas.m_cas(), true);
         assert_eq!(unsafe { *atomic_num1.read() }, 2);
         assert_eq!(unsafe { *atomic_num3.read() }, 4);
     }
