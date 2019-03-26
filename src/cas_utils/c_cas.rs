@@ -12,6 +12,7 @@
 //! # use beee::cas_utils::*;
 //! # use beee::utils::{AtomicNumLikes, AtomicNumLikesMethods};
 //! # use std::sync::Arc;
+//! # use std::sync::atomic::Ordering;
 //!
 //! let success = Arc::new(AtomicNumLikes::new(Status::Successful));
 //! let undecided = Arc::new(AtomicNumLikes::new(Status::Undecided));
@@ -23,10 +24,10 @@
 //!
 //! let c_cas_ptr = CCasPtr::from_c_cas_union(num_ptr);
 //! c_cas_ptr.c_cas(num_ptr, num2_ptr, success.clone()); // This cas will not happen because of `Status::Successful`
-//! assert_eq!(unsafe {*c_cas_ptr.load()}, 1);
+//! assert_eq!(unsafe { *(*c_cas_ptr.load(Ordering::Relaxed)).load() }, 1);
 //!
 //! c_cas_ptr.c_cas(num_ptr, num2_ptr, undecided.clone()); // This will cas values because we pass `Status::Undecided`
-//! assert_eq!(unsafe {*c_cas_ptr.load()}, 2);
+//! assert_eq!(unsafe { *(*c_cas_ptr.load(Ordering::Relaxed)).load() }, 2);
 //! ```
 //!
 //! # Notes
@@ -34,7 +35,7 @@
 //! The detail algorithm is written in [Practicallock-freedom](https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-579.pdf).
 
 use crate::cas_utils::Status;
-use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
+use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods, AtomicPtrAddOn};
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -90,11 +91,23 @@ impl<T> CCasUnion<T> {
             _ => unreachable!(),
         }
     }
+    pub fn load(&mut self) -> *mut T {
+        let self_ptr = self as *mut Self;
+        loop {
+            match self {
+                CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(self_ptr),
+                CCasUnion::Value(val) => return val as *mut T,
+            }
+        }
+    }
+    pub fn get_ptr(&mut self) -> *mut Self {
+        self as *mut Self
+    }
 }
 
 /// Only an alias of `Arc<UnsafeCell<AtomicPtr<CCasUnion<T>>>>`
 pub struct CCasPtr<T> {
-    pub inner: Arc<AtomicPtr<CCasUnion<T>>>,
+    inner: Arc<AtomicPtr<CCasUnion<T>>>,
 }
 unsafe impl<T> std::marker::Send for CCasPtr<T> {}
 
@@ -153,16 +166,19 @@ impl<T> CCasPtr<T> {
         }
     }
 
-    pub fn load(&self) -> *mut T {
-        loop {
-            unsafe {
-                let v = self.inner.load(Ordering::SeqCst); // TODO: set order carefully
-                match &mut *v {
-                    CCasUnion::CCasDesc(c_cas_desc) => c_cas_desc.help(v),
-                    CCasUnion::Value(val) => return val as *mut T,
-                }
-            }
-        }
+    pub fn load(&self, order: Ordering) -> *mut CCasUnion<T> {
+        self.inner.load(order)
+    }
+    pub fn compare_and_swap(
+        &self,
+        current: *mut CCasUnion<T>,
+        new: *mut CCasUnion<T>,
+        order: Ordering,
+    ) -> *mut CCasUnion<T> {
+        self.inner.compare_and_swap(current, new, order)
+    }
+    pub fn get_addr(&self) -> u64 {
+        unsafe { self.inner.get_addr() }
     }
 }
 
@@ -226,7 +242,7 @@ mod test {
             let c_cas_ptr = c_cas_ptr.clone();
             thread::spawn(move || {
                 for _ in 0..ITER_NUM {
-                    let num = unsafe { *c_cas_ptr.load() };
+                    let num = unsafe { *(*c_cas_ptr.load(Ordering::Relaxed)).load() };
                     assert!(num == 1 || num == 2);
                 }
             })

@@ -3,6 +3,6 @@
 extern crate test;
 
 pub mod cas_utils;
+pub mod mcas_queue;
 pub mod trieber_stack;
 pub mod utils;
-pub mod mcas_queue;
