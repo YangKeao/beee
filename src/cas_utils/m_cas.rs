@@ -148,9 +148,12 @@ impl<T> MCas<T> for Vec<SingleCas<T>> {
 
 pub trait MCasRead<T> {
     fn read(&self) -> *mut T;
+    fn store_ptr(&self, val: *mut CCasUnion<MCasUnion<T>>, order: Ordering);
+    fn get_ptr(&self) -> *mut CCasUnion<MCasUnion<T>>;
 }
 
-impl<T> MCasRead<T> for CCasPtr<MCasUnion<T>> {
+pub type AtomicMCasPtr<T> = CCasPtr<MCasUnion<T>>;
+impl<T> MCasRead<T> for AtomicMCasPtr<T> {
     fn read(&self) -> *mut T {
         loop {
             let c_cas_ptr = self.load();
@@ -167,9 +170,27 @@ impl<T> MCasRead<T> for CCasPtr<MCasUnion<T>> {
             }
         }
     }
+    fn store_ptr(&self, val: *mut CCasUnion<MCasUnion<T>>, order: Ordering) {
+        self.inner.store(val, order);
+    }
+    fn get_ptr(&self) -> *mut CCasUnion<MCasUnion<T>> {
+        loop {
+            let c_cas_ptr = self.load();
+            let c_union_ptr = self.inner.load(Ordering::Relaxed);
+            unsafe {
+                match &mut *c_cas_ptr {
+                    MCasUnion::MCasDesc(desc) => {
+                        desc.help(c_union_ptr);
+                    }
+                    MCasUnion::Value(_) => {
+                        return c_union_ptr;
+                    }
+                }
+            }
+        }
+    }
 }
 
-pub type AtomicMCasPtr<T> = CCasPtr<MCasUnion<T>>;
 impl<T> AtomicMCasPtr<T> {
     pub fn new(ptr: &mut MCasPtr<T>) -> Self {
         CCasPtr::from_c_cas_union(ptr.get_mut_ptr())
@@ -180,6 +201,20 @@ pub type MCasPtr<T> = CCasUnion<MCasUnion<T>>;
 impl<T> MCasPtr<T> {
     pub fn new(val: T) -> MCasPtr<T> {
         CCasUnion::Value(MCasUnion::Value(val))
+    }
+    pub fn read_mut(&mut self) -> *mut T {
+        let self_ptr = self as *mut Self;
+        loop {
+            match self {
+                CCasUnion::Value(v) => {
+                    match v {
+                        MCasUnion::Value(v) => {return v as *mut T}
+                        MCasUnion::MCasDesc(desc) => {desc.help(self_ptr);}
+                    }
+                }
+                CCasUnion::CCasDesc(desc) => {desc.help(self_ptr);}
+            }
+        }
     }
     pub fn get_mut_ptr(&mut self) -> *mut Self {
         self as *mut Self
