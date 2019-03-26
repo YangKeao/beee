@@ -216,13 +216,13 @@ mod test {
     #[test]
     fn single_thread_m_cas() {
         let mut num1 = MCasPtr::new(1);
-        let num1_ptr = num1.get_mut_ptr() as *mut MCasPtr<i32>;
+        let num1_ptr = &mut num1 as *mut MCasPtr<i32>;
         let mut num2 = MCasPtr::new(2);
-        let num2_ptr = num2.get_mut_ptr() as *mut MCasPtr<i32>;
+        let num2_ptr = &mut num2 as *mut MCasPtr<i32>;
         let mut num3 = MCasPtr::new(3);
-        let num3_ptr = num3.get_mut_ptr() as *mut MCasPtr<i32>;
+        let num3_ptr = &mut num3 as *mut MCasPtr<i32>;
         let mut num4 = MCasPtr::new(4);
-        let num4_ptr = num4.get_mut_ptr() as *mut MCasPtr<i32>;
+        let num4_ptr = &mut num4 as *mut MCasPtr<i32>;
 
         let atomic_num1 = AtomicMCasPtr::new(&mut num1);
         let first_cas = SingleCas::new(&atomic_num1.clone(), num2_ptr, num2_ptr);
