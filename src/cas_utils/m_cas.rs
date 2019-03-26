@@ -1,7 +1,6 @@
 use crate::cas_utils::c_cas::{CCasPtr, CCasUnion};
 use crate::cas_utils::Status;
 use crate::utils::{AtomicNumLikes, AtomicNumLikesMethods};
-use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -14,8 +13,7 @@ impl<T> MCasDesc<T> {
     fn help(&self, desc_ptr: *mut CCasUnion<MCasUnion<T>>) -> bool {
         'iter: for (index, item) in self.inner.iter().enumerate() {
             'retry: loop {
-                item.origin
-                    .c_cas(item.expect, desc_ptr, self.status.clone());
+                item.origin.c_cas(item.expect, desc_ptr, self.status.clone());
                 unsafe {
                     let c_cas_ptr = item.origin.load(Ordering::Relaxed);
                     if std::ptr::eq(c_cas_ptr, desc_ptr) {
@@ -79,15 +77,15 @@ pub struct SingleCas<T> {
     new: *mut CCasUnion<MCasUnion<T>>,
 }
 impl<T> SingleCas<T> {
-    fn new(
+    pub fn new(
         origin: &AtomicMCasPtr<T>,
-        expect: &mut MCasPtr<T>,
-        new: &mut MCasPtr<T>,
+        expect: *mut MCasPtr<T>,
+        new: *mut MCasPtr<T>,
     ) -> SingleCas<T> {
         Self {
             origin: origin.inner.clone(),
-            expect: expect.get_mut_ptr(),
-            new: new.get_mut_ptr(),
+            expect: expect as *mut CCasUnion<MCasUnion<T>>,
+            new: new as *mut CCasUnion<MCasUnion<T>>,
         }
     }
 }
@@ -142,11 +140,6 @@ impl<T> MCas<T> for Vec<SingleCas<T>> {
     }
 }
 
-pub trait MCasRead<T> {
-    fn read(&self) -> &mut T;
-    fn get_ptr(&self) -> *mut CCasUnion<MCasUnion<T>>;
-}
-
 pub struct AtomicMCasPtr<T> {
     inner: CCasPtr<MCasUnion<T>>,
 }
@@ -158,8 +151,13 @@ impl<T> Clone for AtomicMCasPtr<T> {
     }
 }
 
-impl<T> MCasRead<T> for AtomicMCasPtr<T> {
-    fn read(&self) -> &mut T {
+impl<T> AtomicMCasPtr<T> {
+    pub fn new(ptr: &mut MCasPtr<T>) -> Self {
+        AtomicMCasPtr {
+            inner: CCasPtr::from_c_cas_union(ptr.get_mut_ptr()),
+        }
+    }
+    pub fn read(&self) -> &mut T {
         loop {
             let c_union_ptr = self.inner.load(Ordering::Relaxed);
             let c_cas_ptr = unsafe { (*c_union_ptr).load() };
@@ -175,66 +173,39 @@ impl<T> MCasRead<T> for AtomicMCasPtr<T> {
             }
         }
     }
-    fn get_ptr(&self) -> *mut CCasUnion<MCasUnion<T>> {
-        loop {
-            let c_union_ptr = self.inner.load(Ordering::Relaxed);
-            let c_cas_ptr = unsafe { (*c_union_ptr).load() };
-            unsafe {
-                match &mut *c_cas_ptr {
-                    MCasUnion::MCasDesc(desc) => {
-                        desc.help(c_union_ptr);
-                    }
-                    MCasUnion::Value(_) => {
-                        return c_union_ptr;
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl<T> AtomicMCasPtr<T> {
-    pub fn new(ptr: &mut MCasPtr<T>) -> Self {
-        AtomicMCasPtr {
-            inner: CCasPtr::from_c_cas_union(ptr.get_mut_ptr()),
-        }
+    pub fn get_m_cas_ptr(&self, order: Ordering) -> *mut MCasPtr<T> {
+        self.inner.load(order) as *mut MCasPtr<T>
     }
 }
 
 pub struct MCasPtr<T> {
-    inner: Arc<UnsafeCell<CCasUnion<MCasUnion<T>>>>,
-}
-impl<T> Clone for MCasPtr<T> {
-    fn clone(&self) -> Self {
-        MCasPtr {
-            inner: self.inner.clone(),
-        }
-    }
+    inner: CCasUnion<MCasUnion<T>>,
 }
 impl<T> MCasPtr<T> {
     pub fn new(val: T) -> MCasPtr<T> {
         Self {
-            inner: Arc::new(UnsafeCell::new(CCasUnion::Value(MCasUnion::Value(val)))),
+            inner: CCasUnion::Value(MCasUnion::Value(val)),
         }
     }
     pub fn read_mut(&mut self) -> *mut T {
-        let self_ptr = self.inner.get();
+        let c_cas_union = &mut self.inner;
+        let c_cas_union_ptr = c_cas_union as *mut CCasUnion<MCasUnion<T>>;
         loop {
-            match unsafe { &mut *self.inner.get() } {
+            match c_cas_union {
                 CCasUnion::Value(v) => match v {
                     MCasUnion::Value(v) => return v as *mut T,
                     MCasUnion::MCasDesc(desc) => {
-                        desc.help(self_ptr);
+                        desc.help(c_cas_union_ptr);
                     }
                 },
                 CCasUnion::CCasDesc(desc) => {
-                    desc.help(self_ptr);
+                    desc.help(c_cas_union_ptr);
                 }
             }
         }
     }
     pub fn get_mut_ptr(&mut self) -> *mut CCasUnion<MCasUnion<T>> {
-        self.inner.get()
+       &mut self.inner as *mut CCasUnion<MCasUnion<T>>
     }
 }
 
@@ -245,23 +216,27 @@ mod test {
     #[test]
     fn single_thread_m_cas() {
         let mut num1 = MCasPtr::new(1);
+        let num1_ptr = num1.get_mut_ptr() as *mut MCasPtr<i32>;
         let mut num2 = MCasPtr::new(2);
+        let num2_ptr = num2.get_mut_ptr() as *mut MCasPtr<i32>;
         let mut num3 = MCasPtr::new(3);
+        let num3_ptr = num3.get_mut_ptr() as *mut MCasPtr<i32>;
         let mut num4 = MCasPtr::new(4);
+        let num4_ptr = num4.get_mut_ptr() as *mut MCasPtr<i32>;
 
         let atomic_num1 = AtomicMCasPtr::new(&mut num1);
-        let first_cas = SingleCas::new(&atomic_num1.clone(), &mut num2.clone(), &mut num2.clone());
+        let first_cas = SingleCas::new(&atomic_num1.clone(), num2_ptr, num2_ptr);
 
         let atomic_num3 = AtomicMCasPtr::new(&mut num3);
-        let second_cas = SingleCas::new(&atomic_num3.clone(), &mut num3.clone(), &mut num4.clone());
+        let second_cas = SingleCas::new(&atomic_num3.clone(), num3_ptr, num4_ptr);
 
         let m_cas = vec![first_cas, second_cas];
         assert_eq!(m_cas.m_cas(), false);
         assert_eq!(*atomic_num1.read(), 1);
         assert_eq!(*atomic_num3.read(), 3);
 
-        let first_cas = SingleCas::new(&atomic_num1.clone(), &mut num1.clone(), &mut num2.clone());
-        let second_cas = SingleCas::new(&atomic_num3.clone(), &mut num3.clone(), &mut num4.clone());
+        let first_cas = SingleCas::new(&atomic_num1.clone(), num1_ptr, num2_ptr);
+        let second_cas = SingleCas::new(&atomic_num3.clone(), num3_ptr, num4_ptr);
         let m_cas = vec![first_cas, second_cas];
         assert_eq!(m_cas.m_cas(), true);
         assert_eq!(*atomic_num1.read(), 2);
